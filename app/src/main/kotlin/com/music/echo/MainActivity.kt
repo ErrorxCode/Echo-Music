@@ -737,6 +737,46 @@ class MainActivity : ComponentActivity() {
       }
 
       playerConnection.service.currentMediaMetadata.collectLatest { song ->
+        // Album-art accent colors are only appropriate when a song is available.
+        // Keep the selected palette while idle so returning from playback cannot
+        // leave the app on a stale or fallback accent.
+        if (song?.thumbnailUrl == null) {
+          themeColor = selectedThemeColor
+          return@collectLatest
+        }
+
+        val extractedColor =
+          withContext(Dispatchers.IO) {
+            try {
+              val result =
+                imageLoader.execute(
+                  ImageRequest.Builder(this@MainActivity)
+                    .data(song.thumbnailUrl)
+                    .allowHardware(false)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .networkCachePolicy(CachePolicy.ENABLED)
+                    .crossfade(false)
+                    .build()
+                )
+              result.image?.toBitmap()?.extractThemeColor()
+            } catch (e: Exception) {
+              null
+            }
+          }
+
+        // A failed/empty extraction must not replace the selected or system
+        // dynamic palette with an arbitrary fallback color.
+        themeColor = extractedColor ?: selectedThemeColor
+      }
+    }  LaunchedEffect(playerConnection, enableDynamicTheme, selectedThemeColor) {
+      val playerConnection = playerConnection
+      if (!enableDynamicTheme || playerConnection == null) {
+        themeColor = selectedThemeColor
+        return@LaunchedEffect
+      }
+
+      playerConnection.service.currentMediaMetadata.collectLatest { song ->
         if (song?.thumbnailUrl != null) {
           withContext(Dispatchers.IO) {
             try {
